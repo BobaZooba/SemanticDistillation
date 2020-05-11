@@ -31,6 +31,7 @@ class RNNEncoder(nn.Module):
 
         x = torch.max(x, dim=1)[0]
         x = self.out_projection(x)
+        x = torch.nn.functional.normalize(x)
 
         return x
 
