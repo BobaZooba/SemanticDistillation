@@ -87,8 +87,8 @@ def get_logits(logits_data_path):
 
 def collecting(data_dir):
 
-    if not os.path.isfile(os.path.join(data_dir, 'word2index.json')) \
-            or not os.path.isfile(os.path.join(data_dir, 'embeddings.npy')):
+    if os.path.isfile(os.path.join(data_dir, 'word2index.json')) \
+            and os.path.isfile(os.path.join(data_dir, 'embeddings.npy')):
         return None
 
     train_path = os.path.join(data_dir, 'train.tsv')
