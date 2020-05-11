@@ -39,8 +39,8 @@ def get_args() -> Namespace:
     parser.add_argument('--checkpoint_path', type=str, default='./data/checkpoint')
     parser.add_argument('--project_name', type=str, default='LightningDistillation')
     parser.add_argument('--max_norm', type=float, default=5.)
-    parser.add_argument('--distributed_backend', type=str, default='ddp')
-    parser.add_argument('--gpus', type=int, default=1 if torch.cuda.is_available() else 0)
+    parser.add_argument('--distributed_backend', type=str, default='dp')
+    parser.add_argument('--gpu', type=int, default=0 if torch.cuda.is_available() else None)
     parser.add_argument('--n_batch_accumulate', type=int, default=1)
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--max_length', type=int, default=64)
@@ -113,7 +113,7 @@ def train():
                          precision=precision,
                          gradient_clip=args.max_norm,
                          distributed_backend=args.distributed_backend,
-                         gpus=args.gpus,
+                         gpus=[args.gpu],
                          val_check_interval=0.5,
                          num_sanity_val_steps=0,
                          log_save_interval=10,
