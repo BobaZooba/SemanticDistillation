@@ -92,7 +92,7 @@ def train():
         verbose=True,
         monitor='val_loss',
         mode='min',
-        prefix='distillation'
+        prefix=f'distillation_{args.gpu}'
     )
 
     try:
