@@ -8,7 +8,8 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-from src.data import get_data, get_logits, PairedData
+from src.collecting import get_data, get_logits
+from src.data import PairedData
 from src.model import RNNEncoder, DistillationLoss, SimilarityWrapper
 
 

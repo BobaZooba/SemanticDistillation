@@ -7,6 +7,7 @@ import json
 from argparse import ArgumentParser, Namespace
 
 from src import lightning
+from src.collecting import collecting
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import TensorBoardLogger
 
@@ -61,6 +62,9 @@ def train():
     set_global_seed(args.seed)
 
     logging.basicConfig(level=logging.INFO)
+
+    logger.info('Start collecting data')
+    collecting(args.data_dir)
 
     model = lightning.LightningDistillation(args)
 
