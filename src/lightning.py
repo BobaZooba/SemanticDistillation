@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 
 from src.collecting import get_data, get_logits
 from src.data import PairedData
-from src.model import RNNEncoder, DistillationLoss, SimilarityWrapper
+from src.model import RNNEncoder, RNNCNNEncoder, DistillationLoss, SimilarityWrapper
 
 
 class LightningDistillation(pl.LightningModule):
@@ -29,11 +29,16 @@ class LightningDistillation(pl.LightningModule):
             self.word2index = json.load(file_object)
 
         embeddings = np.load(os.path.join(self.hparams.data_dir, 'embeddings.npy'))
+        
+        if self.hparams.model_type == 'rnncnn':
+            self.encoder_name = RNNCNNEncoder
+        elif self.hparams.model_type == 'rnn':
+            self.encoder_name = RNNEncoder
 
-        self.encoder = RNNEncoder(pretrained_embeddings=torch.tensor(embeddings).float(),
-                                  rnn_dim=self.hparams.model_dim,
-                                  rnn_layers=self.hparams.rnn_layers,
-                                  dropout=self.hparams.dropout)
+        self.encoder = self.encoder_name(pretrained_embeddings=torch.tensor(embeddings).float(),
+                                        rnn_dim=self.hparams.model_dim,
+                                        rnn_layers=self.hparams.rnn_layers,
+                                        dropout=self.hparams.dropout)
 
         self.wrapper = SimilarityWrapper(encoder=self.encoder)
 
@@ -170,6 +175,7 @@ class LightningDistillation(pl.LightningModule):
         parser = ArgumentParser(parents=[parent_parser])
 
         # model
+        parser.add_argument('--model_type', type=str, default='rnncnn', help='"rnncnn" for RNN+CNN, "rnn" for RNN')
         parser.add_argument('--model_dim', type=int, default=256)
         parser.add_argument('--rnn_layers', type=int, default=2)
         parser.add_argument('--dropout', type=float, default=0.3)
