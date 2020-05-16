@@ -98,7 +98,7 @@ class LightningDistillation(pl.LightningModule):
                 'targets': targets.detach().cpu()}
 
     def validation_epoch_end(self, outputs: list):
-        mean_loss = torch.stack([batch['val_loss'] for batch in outputs]).mean()
+        mean_loss = torch.stack([batch['loss'] for batch in outputs]).mean()
         predictions = torch.stack([batch['predictions'] for batch in outputs])
         targets = torch.stack([batch['targets'] for batch in outputs])
         accuracy = (predictions == targets).sum().float() / targets.shape[0]
@@ -111,7 +111,7 @@ class LightningDistillation(pl.LightningModule):
         return self.validation_step(batch, batch_idx)
 
     def test_epoch_end(self, outputs):
-        mean_loss = torch.stack([batch['test_loss'] for batch in outputs]).mean()
+        mean_loss = torch.stack([batch['loss'] for batch in outputs]).mean()
         predictions = torch.stack([batch['predictions'] for batch in outputs])
         targets = torch.stack([batch['targets'] for batch in outputs])
         accuracy = (predictions == targets).sum().float() / targets.shape[0]
