@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from torch.nn.functional import cross_entropy
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
@@ -116,5 +117,65 @@ class DistillationLoss(torch.nn.Module):
         student_prediction = torch.log_softmax(student_logits / self.temperature, dim=-1)
 
         loss = torch.mean(torch.sum(-teacher_prediction * student_prediction, dim=-1))
+
+        return loss
+
+
+class EntropyLoss(nn.Module):
+    """from https://arxiv.org/pdf/1902.08564.pdf"""
+
+    def __init__(self, margin=0.):
+        super().__init__()
+
+        self.margin = margin
+
+    def forward(self, anchors, positives):
+        scores = anchors.mm(positives.t())
+
+        margin_matrix = (torch.eye(anchors.size(0)) * self.margin).to(anchors.device)
+        scores -= margin_matrix
+
+        targets = torch.arange(anchors.size(0)).to(anchors.device)
+
+        loss = cross_entropy(scores, targets)
+
+        return loss
+
+
+class TripletEntropyLoss(nn.Module):
+    """from https://arxiv.org/pdf/1703.07737.pdf"""
+
+    def __init__(self, delta=1e-3, nm_coefficient=0.5, np_coefficient=0.25,
+                 na_coefficient=0.25, magnitude=4., margin=0.):
+        super().__init__()
+
+        self.delta = delta
+        self.nm_coefficient = nm_coefficient
+        self.np_coefficient = np_coefficient
+        self.na_coefficient = na_coefficient
+        self.magnitude = magnitude
+        self.margin = margin
+
+    def forward(self, anchors, positives, negatives):
+        pos_sim = (anchors * positives).sum(-1) / self.magnitude
+
+        neg_mul = torch.matmul(anchors, negatives.t())
+        neg_mul = self.nm_coefficient * torch.exp(neg_mul / self.magnitude + self.margin)
+
+        delta_mask = torch.eye(anchors.size(0)).bool()
+
+        neg_pos_mul = torch.matmul(anchors, positives.t())
+        neg_pos_mul = neg_pos_mul.masked_fill_(delta_mask, self.delta)
+        neg_pos_mul = self.np_coefficient * torch.exp(neg_pos_mul / self.magnitude + self.margin)
+
+        neg_anc_mul = torch.matmul(anchors, anchors.t())
+        neg_anc_mul = neg_anc_mul.masked_fill_(delta_mask, self.delta)
+        neg_anc_mul = self.na_coefficient * torch.exp(neg_anc_mul / self.magnitude + self.margin)
+
+        neg_scores = torch.cat((neg_mul, neg_pos_mul, neg_anc_mul), dim=-1)
+
+        neg_sim = torch.log(neg_scores.sum(dim=-1))
+
+        loss = torch.relu(neg_sim - pos_sim).mean()
 
         return loss

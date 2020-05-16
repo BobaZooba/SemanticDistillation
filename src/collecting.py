@@ -17,9 +17,11 @@ def process_text(text):
     return words
 
 
-def get_word2vec(exist_words=None, max_words=1000000,
-                 file_path='data/cc.en.300.vec',
-                 verbose=True, pad_token='PAD'):
+def get_word2vec(file_path,
+                 exist_words=None,
+                 max_words=1000000,
+                 verbose=True,
+                 pad_token='PAD'):
     word2index = {pad_token: 0}
     embeddings = []
 
@@ -108,7 +110,8 @@ def collecting(data_dir):
 
     exist_words = set(vocab.keys())
 
-    word2index, embeddings = get_word2vec(exist_words=exist_words)
+    word2index, embeddings = get_word2vec(file_path=os.path.join(data_dir, 'cc.en.300.vec'),
+                                          exist_words=exist_words)
 
     with open(os.path.join(data_dir, 'word2index.json'), 'w') as f:
         json.dump(word2index, f)
