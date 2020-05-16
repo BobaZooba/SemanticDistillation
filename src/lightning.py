@@ -99,8 +99,8 @@ class LightningDistillation(pl.LightningModule):
 
     def validation_epoch_end(self, outputs: list):
         mean_loss = torch.stack([batch['loss'] for batch in outputs]).mean()
-        predictions = torch.stack([batch['predictions'] for batch in outputs])
-        targets = torch.stack([batch['targets'] for batch in outputs])
+        predictions = torch.cat([batch['predictions'] for batch in outputs])
+        targets = torch.cat([batch['targets'] for batch in outputs])
         accuracy = (predictions == targets).sum().float() / targets.shape[0]
 
         log = {'val_loss': mean_loss, 'val_accuracy': accuracy}
@@ -112,8 +112,8 @@ class LightningDistillation(pl.LightningModule):
 
     def test_epoch_end(self, outputs):
         mean_loss = torch.stack([batch['loss'] for batch in outputs]).mean()
-        predictions = torch.stack([batch['predictions'] for batch in outputs])
-        targets = torch.stack([batch['targets'] for batch in outputs])
+        predictions = torch.cat([batch['predictions'] for batch in outputs])
+        targets = torch.cat([batch['targets'] for batch in outputs])
         accuracy = (predictions == targets).sum().float() / targets.shape[0]
 
         log = {'test_loss': mean_loss, 'test_accuracy': accuracy}

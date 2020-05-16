@@ -118,7 +118,7 @@ def train():
                          gradient_clip=args.max_norm,
                          distributed_backend=args.distributed_backend,
                          gpus=[args.gpu] if args.gpu is not None else None,
-                         val_check_interval=0.5,
+                         val_check_interval=0.25,
                          num_sanity_val_steps=0,
                          log_save_interval=10,
                          progress_bar_refresh_rate=10,
