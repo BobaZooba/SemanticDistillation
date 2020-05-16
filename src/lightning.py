@@ -71,7 +71,7 @@ class LightningDistillation(pl.LightningModule):
             'train_loss': loss.item(),
             'train_distillation_loss': distillation_loss.item(),
             'train_classification_loss': classification_loss.item(),
-            'train_accuracy': accuracy.item(),
+            'train_batch_accuracy': accuracy.item(),
             'alpha': self.alpha,
         }
 
@@ -92,39 +92,29 @@ class LightningDistillation(pl.LightningModule):
         loss = self.classification_criterion(prediction, targets)
 
         binary_predictions = prediction.argmax(dim=-1)
-        accuracy = (binary_predictions == targets).sum().float() / targets.shape[0]
 
-        return {'val_loss': loss, 'val_accuracy': accuracy}
+        return {'loss': loss,
+                'predictions': binary_predictions.detach().cpu(),
+                'targets': targets.detach().cpu()}
 
     def validation_epoch_end(self, outputs: list):
         mean_loss = torch.stack([batch['val_loss'] for batch in outputs]).mean()
-        accuracy = torch.stack([batch['val_accuracy'] for batch in outputs]).mean()
+        predictions = torch.stack([batch['predictions'] for batch in outputs])
+        targets = torch.stack([batch['targets'] for batch in outputs])
+        accuracy = (predictions == targets).sum().float() / targets.shape[0]
 
         log = {'val_loss': mean_loss, 'val_accuracy': accuracy}
 
         return {'val_loss': mean_loss, 'log': log}
 
     def test_step(self, batch, batch_idx):
-        texts_a, texts_b, targets = batch
-
-        lengths_a = (texts_a != 0).sum(-1)
-        lengths_b = (texts_b != 0).sum(-1)
-        mask = (lengths_a > 0) & (lengths_b > 0)
-        texts_a = texts_a[mask]
-        texts_b = texts_b[mask]
-        targets = targets[mask]
-
-        prediction = self.forward(texts_a, texts_b)
-
-        loss = self.classification_criterion(prediction, targets)
-
-        accuracy = (prediction.argmax(dim=-1) == targets).sum().float() / targets.shape[0]
-
-        return {'test_loss': loss, 'test_accuracy': accuracy}
+        return self.validation_step(batch, batch_idx)
 
     def test_epoch_end(self, outputs):
         mean_loss = torch.stack([batch['test_loss'] for batch in outputs]).mean()
-        accuracy = torch.stack([batch['test_accuracy'] for batch in outputs]).mean()
+        predictions = torch.stack([batch['predictions'] for batch in outputs])
+        targets = torch.stack([batch['targets'] for batch in outputs])
+        accuracy = (predictions == targets).sum().float() / targets.shape[0]
 
         log = {'test_loss': mean_loss, 'test_accuracy': accuracy}
 

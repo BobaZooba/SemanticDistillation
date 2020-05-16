@@ -74,7 +74,7 @@ def train():
     except FileNotFoundError:
         comet_api_key = None
 
-    # comet logger don't work with comet logger
+    # ddp don't work with comet logger
     if comet_api_key is not None and args.distributed_backend == 'dp':
         from pytorch_lightning.loggers import CometLogger
         pl_logger = CometLogger(api_key=comet_api_key,
@@ -95,6 +95,10 @@ def train():
         prefix=f'distillation_{args.gpu}'
     )
 
+    early_stop_callback = pl.callbacks.EarlyStopping(monitor='val_loss',
+                                                     min_delta=0.01,
+                                                     patience=3)
+
     try:
         import apex
         use_amp = True
@@ -113,12 +117,13 @@ def train():
                          precision=precision,
                          gradient_clip=args.max_norm,
                          distributed_backend=args.distributed_backend,
-                         gpus=[args.gpu],
+                         gpus=[args.gpu] if args.gpu is not None else None,
                          val_check_interval=0.5,
                          num_sanity_val_steps=0,
                          log_save_interval=10,
                          progress_bar_refresh_rate=10,
-                         checkpoint_callback=checkpoint_callback)
+                         checkpoint_callback=checkpoint_callback,
+                         early_stop_callback=early_stop_callback)
 
     trainer.fit(model)
 
