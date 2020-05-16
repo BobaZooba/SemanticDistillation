@@ -95,9 +95,7 @@ def train():
         prefix=f'distillation_{args.gpu}'
     )
 
-    early_stop_callback = pl.callbacks.EarlyStopping(monitor='val_loss',
-                                                     min_delta=0.01,
-                                                     patience=3)
+    early_stop_callback = pl.callbacks.EarlyStopping(monitor='val_loss', patience=5)
 
     try:
         import apex
