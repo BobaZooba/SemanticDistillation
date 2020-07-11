@@ -19,8 +19,8 @@ class RNNEncoder(nn.Module):
                            dropout=dropout,
                            bidirectional=True)
 
-        self.out_projection = nn.Linear(in_features=rnn_dim * 2,
-                                        out_features=rnn_dim)
+        # self.out_projection = nn.Linear(in_features=rnn_dim * 2,
+        #                                 out_features=rnn_dim)
 
     def forward(self, x):
         lengths = (x != self.embedding.padding_idx).sum(dim=-1)
@@ -31,7 +31,12 @@ class RNNEncoder(nn.Module):
         x, _ = pad_packed_sequence(x, batch_first=True)
 
         x = torch.max(x, dim=1)[0]
-        x = self.out_projection(x)
+        # x = torch.sum(x, dim=1)
+        scaling = lengths.unsqueeze(-1).to(x.device) ** 0.5
+        x /= scaling
+
+        # x = self.out_projection(x)
+
         x = torch.nn.functional.normalize(x)
 
         return x
