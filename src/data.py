@@ -91,6 +91,7 @@ class DatasetPreparer:
             batch = [index_to_text[i] for i in indices[start:stop]]
 
             tokenized_batch = self.tokenizer.batch_encode_plus(batch,
+                                                               truncation=True,
                                                                max_length=self.config.max_length)['input_ids']
 
             index_to_tokenized_text.extend(tokenized_batch)
