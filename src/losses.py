@@ -151,13 +151,13 @@ class LabelSmoothingLoss(nn.Module):
         :return: scalar
         """
 
-        final_mask = target != self.ignore_index
-
-        if mask is not None:
-            final_mask = torch.logical_and(final_mask, mask)
-
-        prediction = prediction.masked_select(final_mask)
-        target = target.masked_select(final_mask)
+        # final_mask = target != self.ignore_index
+        #
+        # if mask is not None:
+        #     final_mask = torch.logical_and(final_mask, mask)
+        #
+        # prediction = prediction.masked_select(final_mask)
+        # target = target.masked_select(final_mask)
 
         prediction = F.log_softmax(prediction, dim=-1)
 
