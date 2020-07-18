@@ -42,35 +42,16 @@ class CosineTripletLoss(nn.Module):
 
                 diagonal_mask = torch.eye(x.size(0)).bool().to(x.device)
 
-                # positive_sim_matrix = similarity_matrix.masked_select(diagonal_mask)
-
                 similarity_matrix = similarity_matrix.where(~diagonal_mask.bool(),
                                                             torch.tensor([-1.]).to(x.device))
 
                 difference = positive_sim_matrix.detach().unsqueeze(-1).repeat(1, similarity_matrix.size(-1))
                 difference = difference - similarity_matrix
 
-                similarity_matrix = similarity_matrix.where(difference <= self.semi_hard_margin,
+                similarity_matrix = similarity_matrix.where(difference <= 0.,
                                                             torch.tensor([-1.]).to(x.device))
 
                 negative_indices = similarity_matrix.argmax(dim=1)
-
-            # with torch.no_grad():
-            #     similarity_matrix = x @ y.t()
-            #
-            #     diagonal_mask = (~torch.eye(x.size(0)).bool()).to(x.device)
-            #
-            #     similarity_matrix = similarity_matrix.where(~diagonal_mask.bool(),
-            #                                                 torch.tensor([-1.]).to(x.device))
-            #
-            #     if self.sampling_type == 'semi_hard':
-            #         difference = positive_sim_matrix.detach().unsqueeze(-1).repeat(1, similarity_matrix.size(-1))
-            #         difference = difference - similarity_matrix
-            #
-            #         similarity_matrix = similarity_matrix.where(difference >= self.semi_hard_margin,
-            #                                                     torch.tensor([-1.]).to(x.device))
-            #
-            #     negative_indices = similarity_matrix.argmax(dim=1)
 
         negative_sim_matrix = (x * y[negative_indices]).sum(dim=1)
 
