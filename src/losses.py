@@ -55,7 +55,7 @@ class CosineMiner(nn.Module, ABC):
             similarity_matrix = similarity_matrix.where(difference > 0.,
                                                         torch.tensor([-1.]).to(anchor.device))
 
-            _, negative_indices = similarity_matrix.argsort(descending=True)
+            negative_indices = similarity_matrix.argsort(descending=True)
             negative_indices = negative_indices[:, :self.n_negatives]
 
         return negative_indices
@@ -74,7 +74,7 @@ class CosineMiner(nn.Module, ABC):
             similarity_matrix = similarity_matrix.where(~diagonal_mask.bool(),
                                                         torch.tensor([-1.]).to(anchor.device))
 
-            _, negative_indices = similarity_matrix.argsort(descending=True)
+            negative_indices = similarity_matrix.argsort(descending=True)
             negative_indices = negative_indices[:, :self.n_negatives]
 
         return negative_indices
