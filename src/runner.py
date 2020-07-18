@@ -1,4 +1,17 @@
+import json
+import math
+import os
+from abc import ABC
 from argparse import Namespace
+from typing import Any, List, Tuple
+
+import numpy as np
+import pandas as pd
+import torch
+import transformers
+from torch.utils.data import Dataset, DataLoader
+from tqdm import tqdm
+from src.data import ConvAI2Dataset, ConvAI2TextDataset
 
 
 class BaseConfig(Namespace):
@@ -26,191 +39,191 @@ class BaseConfig(Namespace):
                          candidates_batch_size=candidates_batch_size,
                          tokenize_batch_size=tokenize_batch_size,
                          verbose=verbose)
-#
-#
-# class DatasetPreparer:
-#
-#     TRAIN_FILE = 'train.json'
-#     TRAIN_WITH_CANDIDATES_FILE = 'train_with_candidates.json'
-#     VALID_FILE = 'valid.json'
-#     VALID_WITH_CANDIDATES_FILE = 'valid_with_candidates.json'
-#
-#     INDEX_TO_TEXT_FILE = 'index_to_text.json'
-#
-#     def __init__(self, config: Namespace):
-#
-#         self.config = config
-#
-#         self.data_dir = os.path.join(os.getcwd(), self.config.data_dir)
-#         self.tokenizer = transformers.AutoTokenizer.from_pretrained(self.config.model_type)
-#
-#         setattr(self.config, 'pad_index', self.tokenizer.pad_token_id)
-#
-#         self.index_to_text = self.build_index()
-#
-#     def load_json_file(self, file: str):
-#
-#         with open(os.path.join(self.data_dir, file)) as file_object:
-#             data = json.load(file_object)
-#
-#         return data
-#
-#     def build_index(self):
-#
-#         index_to_text = dict()
-#
-#         for key, value in self.load_json_file(self.INDEX_TO_TEXT_FILE).items():
-#             index_to_text[int(key)] = value
-#
-#         if self.config.data_type in ('text',):
-#             return index_to_text
-#
-#         index_to_tokenized_text = list()
-#
-#         indices = list(range(len(index_to_text)))
-#
-#         for i_batch in tqdm(range(math.ceil(len(index_to_text) / self.config.tokenize_batch_size)),
-#                             desc='Building index',
-#                             disable=not self.config.verbose):
-#
-#             start = i_batch * self.config.tokenize_batch_size
-#             stop = (i_batch + 1) * self.config.tokenize_batch_size
-#
-#             batch = [index_to_text[i] for i in indices[start:stop]]
-#
-#             tokenized_batch = self.tokenizer.batch_encode_plus(batch,
-#                                                                truncation=True,
-#                                                                max_length=self.config.max_length)['input_ids']
-#
-#             index_to_tokenized_text.extend(tokenized_batch)
-#
-#         return index_to_tokenized_text
-#
-#     def build_data(self, file, with_candidates: bool):
-#
-#         if self.config.data_type in ('basic', 'common'):
-#             dataset = ConvAI2Dataset(data=self.load_json_file(file=file),
-#                                      index_to_text=self.index_to_text,
-#                                      with_candidates=with_candidates,
-#                                      max_candidates=self.config.max_candidates,
-#                                      question_token_type_id=self.config.question_token_type_id,
-#                                      response_token_type_id=self.config.response_token_type_id,
-#                                      max_length=self.config.max_length,
-#                                      pad_index=self.config.pad_index)
-#         elif self.config.data_type in ('text',):
-#             dataset = ConvAI2TextDataset(data=self.load_json_file(file=file),
-#                                          index_to_text=self.index_to_text,
-#                                          with_candidates=with_candidates,
-#                                          max_candidates=self.config.max_candidates)
-#         else:
-#             raise ValueError('Not available data_type')
-#
-#         return dataset
-#
-#     def load_data(self, as_data_loader: bool = False):
-#
-#         train_data = self.build_data(file=self.TRAIN_FILE, with_candidates=False)
-#         train_with_candidates_data = self.build_data(file=self.TRAIN_WITH_CANDIDATES_FILE, with_candidates=True)
-#
-#         valid_data = self.build_data(file=self.VALID_FILE, with_candidates=False)
-#         valid_with_candidates_data = self.build_data(file=self.VALID_WITH_CANDIDATES_FILE, with_candidates=True)
-#
-#         if as_data_loader:
-#             train_loader = DataLoader(dataset=train_data,
-#                                       batch_size=self.config.batch_size,
-#                                       shuffle=True,
-#                                       collate_fn=train_data.collate,
-#                                       drop_last=True)
-#
-#             valid_loader = DataLoader(dataset=valid_data,
-#                                       batch_size=self.config.batch_size,
-#                                       collate_fn=valid_data.collate,
-#                                       drop_last=True)
-#
-#             train_with_candidates_loader = DataLoader(dataset=train_with_candidates_data,
-#                                                       batch_size=self.config.candidates_batch_size,
-#                                                       shuffle=True,
-#                                                       collate_fn=train_with_candidates_data.collate)
-#
-#             valid_with_candidates_loader = DataLoader(dataset=valid_with_candidates_data,
-#                                                       batch_size=self.config.candidates_batch_size,
-#                                                       collate_fn=valid_with_candidates_data.collate)
-#
-#             data = (train_loader, valid_loader)
-#             data_with_candidates = (train_with_candidates_loader, valid_with_candidates_loader)
-#
-#         else:
-#             data = (train_data, valid_data)
-#             data_with_candidates = (train_with_candidates_data, valid_with_candidates_data)
-#
-#         return data, data_with_candidates
-#
-#
-# class Recall:
-#
-#     def __init__(self, k_variants: Tuple[int] = (1, 3, 5), c_variants: Tuple[int] = (2, 5, 10, 15, 20)):
-#
-#         self.k_variants = k_variants
-#         self.c_variants = c_variants
-#
-#         self.matrices = None
-#         self._messages = list()
-#         self.step = 0
-#
-#         self.reset()
-#
-#     def add(self, similarity_matrix: np.array):
-#         self.matrices.append(similarity_matrix)
-#
-#     def reset(self):
-#         self.matrices = list()
-#
-#     def calculate(self, k: int, c: int):
-#         similarity_matrix = torch.cat(self.matrices)[:, :c]
-#
-#         ranked = similarity_matrix.argsort(descending=True)
-#         ranked = ranked[:, :k] == 0
-#
-#         ranked = ranked.sum(dim=-1).float()
-#
-#         recall = (ranked.sum() / ranked.shape[0]).item()
-#
-#         return recall
-#
-#     @property
-#     def metrics(self):
-#
-#         metrics = list()
-#         self.step += 1
-#
-#         if len(self._messages) > 0:
-#             self._messages.append(30 * '=')
-#
-#         for k in self.k_variants:
-#
-#             metrics.append(list())
-#
-#             for c in self.c_variants:
-#
-#                 if k >= c:
-#                     metrics[-1].append(np.NaN)
-#                 else:
-#                     current_metric = round(self.calculate(k, c), 3)
-#                     self._messages.append(f'Step {self.step} | Recall @ {k}/{c}: {current_metric:.3f}')
-#                     metrics[-1].append(current_metric)
-#
-#         metrics = pd.DataFrame(data=metrics)
-#
-#         metrics.index = [f'@ {i}' for i in self.k_variants]
-#         metrics.columns = [f'n_candidates {i}' for i in self.c_variants]
-#
-#         return metrics
-#
-#     @property
-#     def messages(self):
-#         return '\n'.join(self._messages)
-#
-#
+
+
+class DatasetPreparer:
+
+    TRAIN_FILE = 'train.json'
+    TRAIN_WITH_CANDIDATES_FILE = 'train_with_candidates.json'
+    VALID_FILE = 'valid.json'
+    VALID_WITH_CANDIDATES_FILE = 'valid_with_candidates.json'
+
+    INDEX_TO_TEXT_FILE = 'index_to_text.json'
+
+    def __init__(self, config: Namespace):
+
+        self.config = config
+
+        self.data_dir = os.path.join(os.getcwd(), self.config.data_dir)
+        self.tokenizer = transformers.AutoTokenizer.from_pretrained(self.config.model_type)
+
+        setattr(self.config, 'pad_index', self.tokenizer.pad_token_id)
+
+        self.index_to_text = self.build_index()
+
+    def load_json_file(self, file: str):
+
+        with open(os.path.join(self.data_dir, file)) as file_object:
+            data = json.load(file_object)
+
+        return data
+
+    def build_index(self):
+
+        index_to_text = dict()
+
+        for key, value in self.load_json_file(self.INDEX_TO_TEXT_FILE).items():
+            index_to_text[int(key)] = value
+
+        if self.config.data_type in ('text',):
+            return index_to_text
+
+        index_to_tokenized_text = list()
+
+        indices = list(range(len(index_to_text)))
+
+        for i_batch in tqdm(range(math.ceil(len(index_to_text) / self.config.tokenize_batch_size)),
+                            desc='Building index',
+                            disable=not self.config.verbose):
+
+            start = i_batch * self.config.tokenize_batch_size
+            stop = (i_batch + 1) * self.config.tokenize_batch_size
+
+            batch = [index_to_text[i] for i in indices[start:stop]]
+
+            tokenized_batch = self.tokenizer.batch_encode_plus(batch,
+                                                               truncation=True,
+                                                               max_length=self.config.max_length)['input_ids']
+
+            index_to_tokenized_text.extend(tokenized_batch)
+
+        return index_to_tokenized_text
+
+    def build_data(self, file, with_candidates: bool):
+
+        if self.config.data_type in ('basic', 'common'):
+            dataset = ConvAI2Dataset(data=self.load_json_file(file=file),
+                                     index_to_text=self.index_to_text,
+                                     with_candidates=with_candidates,
+                                     max_candidates=self.config.max_candidates,
+                                     question_token_type_id=self.config.question_token_type_id,
+                                     response_token_type_id=self.config.response_token_type_id,
+                                     max_length=self.config.max_length,
+                                     pad_index=self.config.pad_index)
+        elif self.config.data_type in ('text',):
+            dataset = ConvAI2TextDataset(data=self.load_json_file(file=file),
+                                         index_to_text=self.index_to_text,
+                                         with_candidates=with_candidates,
+                                         max_candidates=self.config.max_candidates)
+        else:
+            raise ValueError('Not available data_type')
+
+        return dataset
+
+    def load_data(self, as_data_loader: bool = False):
+
+        train_data = self.build_data(file=self.TRAIN_FILE, with_candidates=False)
+        train_with_candidates_data = self.build_data(file=self.TRAIN_WITH_CANDIDATES_FILE, with_candidates=True)
+
+        valid_data = self.build_data(file=self.VALID_FILE, with_candidates=False)
+        valid_with_candidates_data = self.build_data(file=self.VALID_WITH_CANDIDATES_FILE, with_candidates=True)
+
+        if as_data_loader:
+            train_loader = DataLoader(dataset=train_data,
+                                      batch_size=self.config.batch_size,
+                                      shuffle=True,
+                                      collate_fn=train_data.collate,
+                                      drop_last=True)
+
+            valid_loader = DataLoader(dataset=valid_data,
+                                      batch_size=self.config.batch_size,
+                                      collate_fn=valid_data.collate,
+                                      drop_last=True)
+
+            train_with_candidates_loader = DataLoader(dataset=train_with_candidates_data,
+                                                      batch_size=self.config.candidates_batch_size,
+                                                      shuffle=True,
+                                                      collate_fn=train_with_candidates_data.collate)
+
+            valid_with_candidates_loader = DataLoader(dataset=valid_with_candidates_data,
+                                                      batch_size=self.config.candidates_batch_size,
+                                                      collate_fn=valid_with_candidates_data.collate)
+
+            data = (train_loader, valid_loader)
+            data_with_candidates = (train_with_candidates_loader, valid_with_candidates_loader)
+
+        else:
+            data = (train_data, valid_data)
+            data_with_candidates = (train_with_candidates_data, valid_with_candidates_data)
+
+        return data, data_with_candidates
+
+
+class Recall:
+
+    def __init__(self, k_variants: Tuple[int] = (1, 3, 5), c_variants: Tuple[int] = (2, 5, 10, 15, 20)):
+
+        self.k_variants = k_variants
+        self.c_variants = c_variants
+
+        self.matrices = None
+        self._messages = list()
+        self.step = 0
+
+        self.reset()
+
+    def add(self, similarity_matrix: np.array):
+        self.matrices.append(similarity_matrix)
+
+    def reset(self):
+        self.matrices = list()
+
+    def calculate(self, k: int, c: int):
+        similarity_matrix = torch.cat(self.matrices)[:, :c]
+
+        ranked = similarity_matrix.argsort(descending=True)
+        ranked = ranked[:, :k] == 0
+
+        ranked = ranked.sum(dim=-1).float()
+
+        recall = (ranked.sum() / ranked.shape[0]).item()
+
+        return recall
+
+    @property
+    def metrics(self):
+
+        metrics = list()
+        self.step += 1
+
+        if len(self._messages) > 0:
+            self._messages.append(30 * '=')
+
+        for k in self.k_variants:
+
+            metrics.append(list())
+
+            for c in self.c_variants:
+
+                if k >= c:
+                    metrics[-1].append(np.NaN)
+                else:
+                    current_metric = round(self.calculate(k, c), 3)
+                    self._messages.append(f'Step {self.step} | Recall @ {k}/{c}: {current_metric:.3f}')
+                    metrics[-1].append(current_metric)
+
+        metrics = pd.DataFrame(data=metrics)
+
+        metrics.index = [f'@ {i}' for i in self.k_variants]
+        metrics.columns = [f'n_candidates {i}' for i in self.c_variants]
+
+        return metrics
+
+    @property
+    def messages(self):
+        return '\n'.join(self._messages)
+
+
 #
 # def train_loop(query_encoder, response_encoder, loader, criterion, optimizer, clip_grad_norm=3.):
 #     losses = list()
