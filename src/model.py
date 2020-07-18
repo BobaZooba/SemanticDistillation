@@ -1,16 +1,8 @@
-import math
-import json
-
-import numpy as np
-from abc import ABC
-
 import torch
 from torch import nn
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
 
 import transformers
-from tqdm import tqdm
 
 
 class GlobalMaskedPooling(nn.Module):
@@ -62,7 +54,7 @@ class GlobalMaskedPooling(nn.Module):
         return f'pooling_type="{self.pooling_type}"'
 
 
-class Encoder(nn.Module):
+class RawBertEncoder(nn.Module):
 
     def __init__(self, model_type: str):
         super().__init__()
