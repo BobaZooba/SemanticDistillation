@@ -2,82 +2,119 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from typing import Optional
+from abc import ABC
 
 
-class CosineTripletLoss(nn.Module):
+class CosineMiner(nn.Module, ABC):
     SAMPLING_TYPES = ('random', 'semi_hard', 'hard')
 
     def __init__(self,
+                 n_negatives: int = 1,
                  margin: float = 0.05,
                  sampling_type: str = 'semi_hard',
-                 semi_hard_margin: Optional[float] = None):
+                 normalize: bool = False,
+                 semi_hard_epsilon: float = 0.):
         super().__init__()
 
+        self.n_negatives = n_negatives
         self.margin = margin
         self.sampling_type = sampling_type
-        self.semi_hard_margin = semi_hard_margin if semi_hard_margin is not None else self.margin
+        self.normalize = normalize
+        self.semi_hard_epsilon = semi_hard_epsilon
 
         if self.sampling_type not in self.SAMPLING_TYPES:
             raise ValueError(f'Not available sampling_type. Available: {", ".join(self.SAMPLING_TYPES)}')
 
-    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    def random_sampling(self, batch_size: int) -> torch.Tensor:
+        possible_indices = torch.arange(batch_size).unsqueeze(dim=0).repeat(batch_size, 1)
+        mask = ~torch.eye(batch_size).bool()
+        possible_indices = possible_indices.masked_select(mask).view(batch_size, batch_size - 1)
+        random_indices = torch.randint(batch_size - 1, (batch_size, self.n_negatives))
+        negative_indices = torch.gather(possible_indices, 1, random_indices)
 
-        positive_sim_matrix = (x * y).sum(dim=1)
+        return negative_indices
 
+    def semi_hard_sampling(self, anchor: torch.Tensor, positive: torch.Tensor) -> torch.Tensor:
         with torch.no_grad():
-            similarity_matrix = x @ y.t()
 
-            diagonal_mask = torch.eye(x.size(0)).bool().to(x.device)
-            # positive_sim_matrix = similarity_matrix.masked_select(diagonal_mask)
+            if self.normalize:
+                anchor = F.normalize(anchor)
+                positive = F.normalize(positive)
+
+            similarity_matrix = anchor @ positive.t()
+
+            diagonal_mask = torch.eye(anchor.size(0)).bool().to(anchor.device)
+            positive_sim_matrix = similarity_matrix.masked_select(diagonal_mask)
 
             difference = positive_sim_matrix.detach().unsqueeze(-1).repeat(1, similarity_matrix.size(-1))
-            difference = difference - similarity_matrix
+            difference = difference - similarity_matrix + self.semi_hard_epsilon
 
             similarity_matrix = similarity_matrix.where(~diagonal_mask.bool(),
-                                                        torch.tensor([-1.]).to(x.device))
+                                                        torch.tensor([-1.]).to(anchor.device))
 
             similarity_matrix = similarity_matrix.where(difference > 0.,
-                                                        torch.tensor([-1.]).to(x.device))
+                                                        torch.tensor([-1.]).to(anchor.device))
 
-            negative_indices = similarity_matrix.argmax(dim=1)
+            _, negative_indices = similarity_matrix.argsort(descending=True)
+            negative_indices = negative_indices[:, :self.n_negatives]
 
-        negative_sim_matrix = (x * y[negative_indices]).sum(dim=1)
+        return negative_indices
 
-        loss = torch.relu(self.margin - positive_sim_matrix + negative_sim_matrix).mean()
-
-        return loss
-    
-    
-class CosineTripletLoss(nn.Module):
-    
-    def __init__(self, margin=0.05):
-        super().__init__()
-        
-        self.margin = margin
-        
-    def forward(self, x, y):
-        
-        positive_sim_matrix = (x * y).sum(dim=1)
-        
+    def hard_sampling(self, anchor: torch.Tensor, positive: torch.Tensor) -> torch.Tensor:
         with torch.no_grad():
-            similarity_matrix = x @ y.t()
-        
-            diag_mask = torch.eye(x.size(0)).to(x.device)
-            
-            difference = positive_sim_matrix.detach().unsqueeze(-1).repeat(1, similarity_matrix.size(-1))
-            difference = difference - similarity_matrix
 
-            similarity_matrix = similarity_matrix.where(~diag_mask.bool(), torch.tensor([-1.]).to(x.device))
-            similarity_matrix[difference < 0] = -1.
-#             similarity_matrix[difference > self.margin] = -1.
-            
-#             similarity, negative_indices = similarity_matrix.max(dim=1)
-            negative_indices = similarity_matrix.argmax(dim=1)
-            
-        negative_sim_matrix = (x * y[negative_indices]).sum(dim=1)
+            if self.normalize:
+                anchor = F.normalize(anchor)
+                positive = F.normalize(positive)
+
+            similarity_matrix = anchor @ positive.t()
+
+            diagonal_mask = torch.eye(anchor.size(0)).bool().to(anchor.device)
+
+            similarity_matrix = similarity_matrix.where(~diagonal_mask.bool(),
+                                                        torch.tensor([-1.]).to(anchor.device))
+
+            _, negative_indices = similarity_matrix.argsort(descending=True)
+            negative_indices = negative_indices[:, :self.n_negatives]
+
+        return negative_indices
+
+    def sampling(self, anchor: torch.Tensor, positive: torch.Tensor) -> torch.Tensor:
+
+        if self.sampling_type == 'hard':
+            negative_indices = self.hard_sampling(anchor=anchor, positive=positive)
+        elif self.sampling_type == 'semi_hard':
+            negative_indices = self.semi_hard_sampling(anchor=anchor, positive=positive)
+        else:
+            negative_indices = self.random_sampling(batch_size=anchor.size(0))
+
+        negative_indices = negative_indices.to(anchor.device)
+
+        return negative_indices
+
+
+class CosineTripletLoss(CosineMiner):
+
+    def __init__(self,
+                 margin: float = 0.05,
+                 sampling_type: str = 'semi_hard',
+                 semi_hard_epsilon: float = 0.):
+        super().__init__(n_negatives=1,
+                         margin=margin,
+                         sampling_type=sampling_type,
+                         normalize=False,
+                         semi_hard_epsilon=semi_hard_epsilon)
+
+    def forward(self, anchor: torch.Tensor, positive: torch.Tensor) -> torch.Tensor:
+
+        positive_sim_matrix = (anchor * positive).sum(dim=1)
+
+        negative_indices = self.sampling(anchor=anchor, positive=positive)[:, 0]
+
+        negative_sim_matrix = (anchor * positive[negative_indices]).sum(dim=1)
 
         loss = torch.relu(self.margin - positive_sim_matrix + negative_sim_matrix).mean()
-        
+
         return loss
 
 
@@ -144,11 +181,49 @@ class MultipleNegativesLoss(nn.Module):
         else:
             self.criterion = LabelSmoothingLoss(smoothing=smoothing)
 
-    def forward(self, anchors: torch.Tensor, positives: torch.Tensor) -> torch.Tensor:
+    def forward(self, anchor: torch.Tensor, positive: torch.Tensor) -> torch.Tensor:
 
-        similarity_matrix = anchors @ positives.t()
-        targets = torch.arange(anchors.size(0)).to(similarity_matrix.device)
+        similarity_matrix = anchor @ positive.t()
+        targets = torch.arange(anchor.size(0)).to(similarity_matrix.device)
 
         loss = self.criterion(similarity_matrix, targets)
+
+        return loss
+
+
+class MultipleNegativesWithMiningLoss(MultipleNegativesLoss):
+
+    def __init__(self,
+                 smoothing: float = 0.1,
+                 n_negatives: int = 4,
+                 margin: float = 0.05,
+                 miner_type: str = 'cosine',
+                 sampling_type: str = 'semi_hard',
+                 semi_hard_epsilon: float = 0.):
+        super().__init__(smoothing=smoothing)
+        if miner_type == 'cosine':
+            self.miner = CosineMiner(n_negatives=n_negatives,
+                                     margin=margin,
+                                     sampling_type=sampling_type,
+                                     normalize=False,
+                                     semi_hard_epsilon=semi_hard_epsilon)
+        else:
+            raise ValueError('Not available miner_type')
+
+    def forward(self, anchor: torch.Tensor, positive: torch.Tensor) -> torch.Tensor:
+
+        negative_indices = self.miner.sampling(anchor=anchor, positive=positive)
+
+        negative = positive[negative_indices]
+
+        candidates = torch.cat((positive.unsqueeze(dim=1), negative), dim=1)
+
+        anchor = anchor.unsqueeze(dim=1)
+
+        similarity_matrix = torch.bmm(anchor, candidates.transpose(1, 2)).squeeze(dim=1)
+
+        target = torch.zeros(anchor.size(0)).long().to(similarity_matrix.device)
+
+        loss = self.criterion(similarity_matrix, target)
 
         return loss
