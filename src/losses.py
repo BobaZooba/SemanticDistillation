@@ -45,7 +45,7 @@ class CosineTripletLoss(nn.Module):
                     difference = positive_sim_matrix.detach().unsqueeze(-1).repeat(1, similarity_matrix.size(-1))
                     difference = difference - similarity_matrix
 
-                    mask = torch.logical_or(mask, self.semi_hard_margin >= difference)
+                    mask = mask | self.semi_hard_margin >= difference
 
                 similarity_matrix = similarity_matrix.where(mask, torch.tensor([-1.]).to(x.device))
 
