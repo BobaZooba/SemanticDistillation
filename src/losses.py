@@ -100,7 +100,7 @@ class LabelSmoothingLoss(nn.Module):
         prediction = prediction.masked_select(final_mask)
         target = target.masked_select(final_mask)
 
-        prediction = torch.nn.functional.log_softmax(prediction, dim=1)
+        prediction = F.log_softmax(prediction, dim=-1)
 
         target_smoothed_dist = self.smooth_one_hot(target, classes=prediction.size(-1))
 
