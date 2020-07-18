@@ -4,59 +4,152 @@ import torch.nn.functional as F
 from typing import Optional
 
 
-class CosineTripletLoss(nn.Module):
-    SAMPLING_TYPES = ('random', 'semi_hard', 'hard')
+# class CosineTripletLoss(nn.Module):
+#     SAMPLING_TYPES = ('random', 'semi_hard', 'hard')
 
-    def __init__(self,
-                 margin: float = 0.05,
-                 sampling_type: str = 'semi_hard',
-                 semi_hard_margin: Optional[float] = None):
+#     def __init__(self,
+#                  margin: float = 0.05,
+#                  sampling_type: str = 'semi_hard',
+#                  semi_hard_margin: Optional[float] = None):
+#         super().__init__()
+
+#         self.margin = margin
+#         self.sampling_type = sampling_type
+#         self.semi_hard_margin = semi_hard_margin if semi_hard_margin is not None else self.margin
+
+#         if self.sampling_type not in self.SAMPLING_TYPES:
+#             raise ValueError(f'Not available sampling_type. Available: {", ".join(self.SAMPLING_TYPES)}')
+
+#     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+
+#         positive_sim_matrix = (x * y).sum(dim=1)
+
+#         with torch.no_grad():
+#             similarity_matrix = x @ y.t()
+
+#             diag_mask = torch.eye(x.size(0)).to(x.device)
+
+#             difference = positive_sim_matrix.detach().unsqueeze(-1).repeat(1, similarity_matrix.size(-1))
+#             difference = difference - similarity_matrix
+
+#             similarity_matrix = similarity_matrix.where(~diag_mask.bool(), torch.tensor([-1.]).to(x.device))
+#             similarity_matrix[difference < 0] = -1.
+# #             similarity_matrix[difference > self.margin] = -1.
+
+# #             similarity, negative_indices = similarity_matrix.max(dim=1)
+#             negative_indices = similarity_matrix.argmax(dim=1)
+
+#         negative_sim_matrix = (x * y[negative_indices]).sum(dim=1)
+
+#         loss = torch.relu(self.margin - positive_sim_matrix + negative_sim_matrix).mean()
+
+#         return loss
+
+
+class CosineTripletLoss(nn.Module):
+
+    def __init__(self, margin=0.05):
         super().__init__()
 
         self.margin = margin
-        self.sampling_type = sampling_type
-        self.semi_hard_margin = semi_hard_margin if semi_hard_margin is not None else self.margin
 
-        if self.sampling_type not in self.SAMPLING_TYPES:
-            raise ValueError(f'Not available sampling_type. Available: {", ".join(self.SAMPLING_TYPES)}')
-
-    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-
+    def forward(self, x, y):
         positive_sim_matrix = (x * y).sum(dim=1)
 
-        if self.sampling_type == 'random':
+        with torch.no_grad():
+            similarity_matrix = x @ y.t()
 
-            batch_size = x.size(0)
+            diag_mask = torch.eye(x.size(0)).to(x.device)
 
-            indices = torch.arange(batch_size).unsqueeze(dim=0).repeat((batch_size, 1))
-            mask = ~torch.eye(batch_size).bool()
-            available_indices = indices[mask].view(batch_size, batch_size - 1)
-            random_indices = torch.randint(0, batch_size - 1, (batch_size,))
+            difference = positive_sim_matrix.detach().unsqueeze(-1).repeat(1, similarity_matrix.size(-1))
+            difference = difference - similarity_matrix
 
-            negative_indices = available_indices[torch.arange(batch_size), random_indices].to(x.device)
+            similarity_matrix = similarity_matrix.where(~diag_mask.bool(), torch.tensor([-1.]).to(x.device))
+            similarity_matrix[difference < 0] = -1.
+            #             similarity_matrix[difference > self.margin] = -1.
 
-        else:
-
-            with torch.no_grad():
-                similarity_matrix = x @ y.t()
-
-                diagonal_mask = torch.eye(x.size(0)).bool().to(x.device)
-
-                similarity_matrix = similarity_matrix.where(~diagonal_mask.bool(),
-                                                            torch.tensor([-1.]).to(x.device))
-
-                difference = positive_sim_matrix.detach().unsqueeze(-1).repeat(1, similarity_matrix.size(-1))
-                difference = difference - similarity_matrix
-
-                similarity_matrix = similarity_matrix.where(difference <= 0.,
-                                                            torch.tensor([-1.]).to(x.device))
-
-                negative_indices = similarity_matrix.argmax(dim=1)
+            #             similarity, negative_indices = similarity_matrix.max(dim=1)
+            negative_indices = similarity_matrix.argmax(dim=1)
 
         negative_sim_matrix = (x * y[negative_indices]).sum(dim=1)
 
         loss = torch.relu(self.margin - positive_sim_matrix + negative_sim_matrix).mean()
 
+        return loss
+
+
+# class CosineTripletLoss(nn.Module):
+#     SAMPLING_TYPES = ('random', 'semi_hard', 'hard')
+
+#     def __init__(self,
+#                  margin: float = 0.05,
+#                  sampling_type: str = 'semi_hard',
+#                  semi_hard_margin: Optional[float] = None):
+#         super().__init__()
+
+#         self.margin = margin
+#         self.sampling_type = sampling_type
+#         self.semi_hard_margin = semi_hard_margin if semi_hard_margin is not None else self.margin
+
+#         if self.sampling_type not in self.SAMPLING_TYPES:
+#             raise ValueError(f'Not available sampling_type. Available: {", ".join(self.SAMPLING_TYPES)}')
+
+#     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+
+#         positive_sim_matrix = (x * y).sum(dim=1)
+
+#         with torch.no_grad():
+#             similarity_matrix = x @ y.t()
+        
+#             diag_mask = torch.eye(x.size(0)).to(x.device)
+            
+#             difference = positive_sim_matrix.detach().unsqueeze(-1).repeat(1, similarity_matrix.size(-1))
+#             difference = difference - similarity_matrix
+
+#             similarity_matrix = similarity_matrix.where(~diag_mask.bool(), torch.tensor([-1.]).to(x.device))
+#             similarity_matrix[difference < 0] = -1.
+# #             similarity_matrix[difference > self.margin] = -1.
+            
+# #             similarity, negative_indices = similarity_matrix.max(dim=1)
+#             negative_indices = similarity_matrix.argmax(dim=1)
+
+#         negative_sim_matrix = (x * y[negative_indices]).sum(dim=1)
+
+#         loss = torch.relu(self.margin - positive_sim_matrix + negative_sim_matrix).mean()
+
+#         return loss
+    
+    
+class CosineTripletLoss(nn.Module):
+    
+    def __init__(self, margin=0.05):
+        super().__init__()
+        
+        self.margin = margin
+        
+    def forward(self, x, y):
+        
+        positive_sim_matrix = (x * y).sum(dim=1)
+        
+        with torch.no_grad():
+            similarity_matrix = x @ y.t()
+        
+            diag_mask = torch.eye(x.size(0)).to(x.device)
+            
+            difference = positive_sim_matrix.detach().unsqueeze(-1).repeat(1, similarity_matrix.size(-1))
+            difference = difference - similarity_matrix
+
+            similarity_matrix = similarity_matrix.where(~diag_mask.bool(), torch.tensor([-1.]).to(x.device))
+            similarity_matrix[difference < 0] = -1.
+#             similarity_matrix[difference > self.margin] = -1.
+            
+#             similarity, negative_indices = similarity_matrix.max(dim=1)
+            negative_indices = similarity_matrix.argmax(dim=1)
+            
+        negative_sim_matrix = (x * y[negative_indices]).sum(dim=1)
+
+        loss = torch.relu(self.margin - positive_sim_matrix + negative_sim_matrix).mean()
+        
         return loss
 
 
