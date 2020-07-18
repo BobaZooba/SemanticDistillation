@@ -7,16 +7,18 @@ import transformers
 
 class GlobalMaskedPooling(nn.Module):
 
-    def __init__(self, pooling_type='mean', dim=1, length_scaling=True, square=True):
+    def __init__(self, pooling_type='mean', dim=1, normalize=False, length_scaling=False, square_root=False):
         super().__init__()
 
         self.pooling_type = pooling_type
         self.dim = dim
+
+        self.normalize = normalize
         self.length_scaling = length_scaling
-        self.square = square
+        self.square_root = square_root
 
         if self.pooling_type == 'max':
-            self.mask_value = -10000.
+            self.mask_value = -100000.
         else:
             self.mask_value = 0.
 
@@ -31,11 +33,11 @@ class GlobalMaskedPooling(nn.Module):
         if self.pooling_type == 'mean':
             scaling = x.size(self.dim) / lengths
         else:
-            scaling = torch.ones(x.size(self.dim))
+            scaling = torch.ones(x.size(0))
 
         if self.length_scaling:
             lengths_factor = lengths
-            if self.square:
+            if self.square_root:
                 lengths_factor = lengths_factor ** 0.5
             scaling /= lengths_factor
 
@@ -44,14 +46,14 @@ class GlobalMaskedPooling(nn.Module):
         if self.pooling_type == 'mean':
             x = x.mean(self.dim)
         else:
-            x = x.max(self.dim)
+            x, _ = x.max(self.dim)
 
         x *= scaling
 
-        return x
+        if self.normalize:
+            x = F.normalize(x)
 
-    def extra_repr(self) -> str:
-        return f'pooling_type="{self.pooling_type}"'
+        return x
 
 
 class RawBertEncoder(nn.Module):
@@ -70,3 +72,38 @@ class RawBertEncoder(nn.Module):
         embed = F.normalize(embed)
 
         return embed
+
+
+class BertRetrieval(nn.Module):
+
+    def __init__(self,
+                 bert_model: transformers.BertModel,
+                 model_dim: int,
+                 pooling_type: str = 'mean',
+                 dropout_prob: float = 0.3,
+                 length_scaling: bool = True,
+                 square_root: bool = True):
+        super().__init__()
+
+        self.bert_model = bert_model
+        self.pooling = GlobalMaskedPooling(pooling_type=pooling_type, normalize=False,
+                                           length_scaling=length_scaling, square_root=square_root)
+        self.dropout = nn.Dropout(p=dropout_prob)
+        self.head = nn.Linear(in_features=self.bert_model.config.hidden_size, out_features=model_dim)
+
+        self.pad_index = self.bert_model.embeddings.word_embeddings.padding_idx
+
+    def forward(self, x):
+        pad_mask = x != self.pad_index
+
+        x = self.bert_model(x, attention_mask=pad_mask.float())[0]
+
+        x = self.pooling(x, pad_mask)
+
+        x = self.dropout(x)
+
+        x = self.head(x)
+
+        x = F.normalize(x)
+
+        return x
