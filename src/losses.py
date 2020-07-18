@@ -96,35 +96,7 @@ class CosineTripletLoss(nn.Module):
     def __init__(self,
                  margin: float = 0.05,
                  sampling_type: str = 'semi_hard',
-                 semi_hard_epsilon: float = 0.):
-        super().__init__()
-
-        self.margin = margin
-
-        self.miner = CosineMiner(n_negatives=1,
-                                 sampling_type=sampling_type,
-                                 normalize=False,
-                                 semi_hard_epsilon=semi_hard_epsilon)
-
-    def forward(self, anchor: torch.Tensor, positive: torch.Tensor) -> torch.Tensor:
-
-        positive_sim_matrix = (anchor * positive).sum(dim=1)
-
-        negative_indices = self.miner.sampling(anchor=anchor, positive=positive)[:, 0]
-
-        negative_sim_matrix = (anchor * positive[negative_indices]).sum(dim=1)
-
-        loss = torch.relu(self.margin - positive_sim_matrix + negative_sim_matrix).mean()
-
-        return loss
-
-
-class MultipleCosineTripletLoss(nn.Module):
-
-    def __init__(self,
                  n_negatives: int = 5,
-                 margin: float = 0.05,
-                 sampling_type: str = 'semi_hard',
                  semi_hard_epsilon: float = 0.):
         super().__init__()
 
@@ -141,7 +113,12 @@ class MultipleCosineTripletLoss(nn.Module):
 
         negative_indices = self.miner.sampling(anchor=anchor, positive=positive)
 
-        negative = positive[negative_indices].mean(dim=1)
+        negative = positive[negative_indices]
+
+        if negative_indices.size(1) == 1:
+            negative = negative.squeeze(dim=1)
+        else:
+            negative = negative.mean(dim=1)
 
         negative_sim_matrix = (anchor * negative).sum(dim=1)
 
