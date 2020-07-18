@@ -79,6 +79,7 @@ class BertRetrieval(nn.Module):
     def __init__(self,
                  bert_model: transformers.BertModel,
                  model_dim: int,
+                 normalize: bool = True,
                  pooling_type: str = 'mean',
                  dropout_prob: float = 0.3,
                  length_scaling: bool = True,
@@ -86,6 +87,7 @@ class BertRetrieval(nn.Module):
         super().__init__()
 
         self.bert_model = bert_model
+        self.normalize = normalize
         self.pooling = GlobalMaskedPooling(pooling_type=pooling_type, normalize=False,
                                            length_scaling=length_scaling, square_root=square_root)
         self.dropout = nn.Dropout(p=dropout_prob)
@@ -104,6 +106,7 @@ class BertRetrieval(nn.Module):
 
         x = self.head(x)
 
-        x = F.normalize(x)
+        if self.normalize:
+            x = F.normalize(x)
 
         return x
