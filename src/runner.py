@@ -1,28 +1,31 @@
-# class BaseConfig(Namespace):
-#
-#     def __init__(self,
-#                  data_dir: str = 'data/convai2/',
-#                  model_type: str = 'bert-base-uncased',
-#                  data_type: str = 'basic',
-#                  max_length: int = 32,
-#                  max_candidates: int = 20,
-#                  question_token_type_id: int = 1,
-#                  response_token_type_id: int = 2,
-#                  batch_size: int = 256,
-#                  candidates_batch_size: int = 8,
-#                  tokenize_batch_size: int = 2048,
-#                  verbose: bool = True):
-#         super().__init__(data_dir=data_dir,
-#                          model_type=model_type,
-#                          data_type=data_type,
-#                          max_length=max_length,
-#                          max_candidates=max_candidates,
-#                          question_token_type_id=question_token_type_id,
-#                          response_token_type_id=response_token_type_id,
-#                          batch_size=batch_size,
-#                          candidates_batch_size=candidates_batch_size,
-#                          tokenize_batch_size=tokenize_batch_size,
-#                          verbose=verbose)
+from argparse import Namespace
+
+
+class BaseConfig(Namespace):
+
+    def __init__(self,
+                 data_dir: str = 'data/convai2/',
+                 model_type: str = 'bert-base-uncased',
+                 data_type: str = 'basic',
+                 max_length: int = 32,
+                 max_candidates: int = 20,
+                 question_token_type_id: int = 1,
+                 response_token_type_id: int = 2,
+                 batch_size: int = 256,
+                 candidates_batch_size: int = 8,
+                 tokenize_batch_size: int = 2048,
+                 verbose: bool = True):
+        super().__init__(data_dir=data_dir,
+                         model_type=model_type,
+                         data_type=data_type,
+                         max_length=max_length,
+                         max_candidates=max_candidates,
+                         question_token_type_id=question_token_type_id,
+                         response_token_type_id=response_token_type_id,
+                         batch_size=batch_size,
+                         candidates_batch_size=candidates_batch_size,
+                         tokenize_batch_size=tokenize_batch_size,
+                         verbose=verbose)
 #
 #
 # class DatasetPreparer:
