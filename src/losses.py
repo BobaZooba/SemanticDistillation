@@ -12,16 +12,30 @@ class CosineMiner(nn.Module, ABC):
                  n_negatives: int = 1,
                  sampling_type: str = 'semi_hard',
                  normalize: bool = False,
-                 semi_hard_epsilon: float = 0.):
+                 multinomial: bool = False,
+                 semi_hard_epsilon: float = 0.,
+                 mask_value: float = -10000.):
         super().__init__()
 
         self.n_negatives = n_negatives
         self.sampling_type = sampling_type
         self.normalize = normalize
+        self.multinomial = multinomial
         self.semi_hard_epsilon = semi_hard_epsilon
 
         if self.sampling_type not in self.SAMPLING_TYPES:
             raise ValueError(f'Not available sampling_type. Available: {", ".join(self.SAMPLING_TYPES)}')
+
+        self.mask_value = torch.tensor([mask_value])
+
+    def get_indices(self, similarity_matrix):
+        if self.multinomial:
+            similarity_matrix = torch.softmax(similarity_matrix, dim=1)
+            negative_indices = torch.multinomial(similarity_matrix, num_samples=self.n_negatives)
+        else:
+            negative_indices = similarity_matrix.argsort(descending=True)
+            negative_indices = negative_indices[:, :self.n_negatives]
+        return negative_indices
 
     def random_sampling(self, batch_size: int) -> torch.Tensor:
         possible_indices = torch.arange(batch_size).unsqueeze(dim=0).repeat(batch_size, 1)
@@ -48,13 +62,12 @@ class CosineMiner(nn.Module, ABC):
             difference = difference - similarity_matrix + self.semi_hard_epsilon
 
             similarity_matrix = similarity_matrix.where(~diagonal_mask.bool(),
-                                                        torch.tensor([-1.]).to(anchor.device))
+                                                        self.mask_value.to(anchor.device))
 
             similarity_matrix = similarity_matrix.where(difference > 0.,
-                                                        torch.tensor([-1.]).to(anchor.device))
+                                                        self.mask_value.to(anchor.device))
 
-            negative_indices = similarity_matrix.argsort(descending=True)
-            negative_indices = negative_indices[:, :self.n_negatives]
+            negative_indices = self.get_indices(similarity_matrix=similarity_matrix)
 
         return negative_indices
 
@@ -70,10 +83,9 @@ class CosineMiner(nn.Module, ABC):
             diagonal_mask = torch.eye(anchor.size(0)).bool().to(anchor.device)
 
             similarity_matrix = similarity_matrix.where(~diagonal_mask.bool(),
-                                                        torch.tensor([-1.]).to(anchor.device))
+                                                        self.mask_value.to(anchor.device))
 
-            negative_indices = similarity_matrix.argsort(descending=True)
-            negative_indices = negative_indices[:, :self.n_negatives]
+            negative_indices = self.get_indices(similarity_matrix=similarity_matrix)
 
         return negative_indices
 
@@ -97,6 +109,7 @@ class CosineTripletLoss(nn.Module):
                  margin: float = 0.05,
                  sampling_type: str = 'semi_hard',
                  n_negatives: int = 5,
+                 multinomial: bool = False,
                  semi_hard_epsilon: float = 0.):
         super().__init__()
 
@@ -105,6 +118,7 @@ class CosineTripletLoss(nn.Module):
         self.miner = CosineMiner(n_negatives=n_negatives,
                                  sampling_type=sampling_type,
                                  normalize=False,
+                                 multinomial=multinomial,
                                  semi_hard_epsilon=semi_hard_epsilon)
 
     def forward(self, anchor: torch.Tensor, positive: torch.Tensor) -> torch.Tensor:
@@ -207,6 +221,7 @@ class MultipleNegativesWithMiningLoss(MultipleNegativesLoss):
                  n_negatives: int = 4,
                  miner_type: str = 'cosine',
                  sampling_type: str = 'semi_hard',
+                 multinomial: bool = False,
                  semi_hard_epsilon: float = 0.):
         super().__init__(smoothing=smoothing)
 
@@ -214,6 +229,7 @@ class MultipleNegativesWithMiningLoss(MultipleNegativesLoss):
             self.miner = CosineMiner(n_negatives=n_negatives,
                                      sampling_type=sampling_type,
                                      normalize=False,
+                                     multinomial=multinomial,
                                      semi_hard_epsilon=semi_hard_epsilon)
         else:
             raise ValueError('Not available miner_type')
