@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-from typing import Optional
+from typing import Optional, Tuple
 from abc import ABC
 
 
@@ -28,28 +28,37 @@ class CosineMiner(nn.Module, ABC):
             raise ValueError(f'Not available sampling_type. Available: {", ".join(self.SAMPLING_TYPES)}')
 
         self.diagonal_mask_value = torch.tensor([-10000.])
-        self.upper_bound_mask_value = torch.tensor([-10.])
-        self.lower_bound_mask_value = torch.tensor([-1.])
+        self.upper_bound_mask_value = torch.tensor([-100.])
+        self.lower_bound_mask_value = torch.tensor([-10.])
 
     def get_indices(self, similarity_matrix):
-        if self.multinomial:
-            similarity_matrix = torch.softmax(similarity_matrix, dim=1)
-            negative_indices = torch.multinomial(similarity_matrix, num_samples=self.n_negatives)
-        else:
-            negative_indices = similarity_matrix.argsort(descending=True)
-            negative_indices = negative_indices[:, :self.n_negatives]
-        return negative_indices
 
-    def random_sampling(self, batch_size: int) -> torch.Tensor:
+        distribution_similarity_matrix = torch.softmax(similarity_matrix, dim=1)
+
+        if self.multinomial:
+            negative_indices = torch.multinomial(distribution_similarity_matrix, num_samples=self.n_negatives)
+        else:
+            negative_indices = distribution_similarity_matrix.argsort(descending=True)
+            negative_indices = negative_indices[:, :self.n_negatives]
+
+        negative_weights = distribution_similarity_matrix.gather(dim=-1, index=negative_indices)
+
+        return negative_indices, negative_weights
+
+    def random_sampling(self, batch_size: int) -> Tuple[torch.Tensor, torch.Tensor]:
         possible_indices = torch.arange(batch_size).unsqueeze(dim=0).repeat(batch_size, 1)
         mask = ~torch.eye(batch_size).bool()
         possible_indices = possible_indices.masked_select(mask).view(batch_size, batch_size - 1)
         random_indices = torch.randint(batch_size - 1, (batch_size, self.n_negatives))
         negative_indices = torch.gather(possible_indices, 1, random_indices)
 
-        return negative_indices
+        weights = torch.ones(batch_size) / batch_size
 
-    def semi_hard_sampling(self, anchor: torch.Tensor, positive: torch.Tensor) -> torch.Tensor:
+        return negative_indices, weights
+
+    def semi_hard_sampling(self,
+                           anchor: torch.Tensor,
+                           positive: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         with torch.no_grad():
 
             if self.normalize:
@@ -74,11 +83,13 @@ class CosineMiner(nn.Module, ABC):
                 similarity_matrix = similarity_matrix.where(difference <= self.margin,
                                                             self.lower_bound_mask_value.to(anchor.device))
 
-            negative_indices = self.get_indices(similarity_matrix)
+            negative_indices, weights = self.get_indices(similarity_matrix)
 
-        return negative_indices
+        return negative_indices, weights
 
-    def hard_sampling(self, anchor: torch.Tensor, positive: torch.Tensor) -> torch.Tensor:
+    def hard_sampling(self,
+                      anchor: torch.Tensor,
+                      positive: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         with torch.no_grad():
 
             if self.normalize:
@@ -92,22 +103,24 @@ class CosineMiner(nn.Module, ABC):
             similarity_matrix = similarity_matrix.where(~diagonal_mask.bool(),
                                                         self.diagonal_mask_value.to(anchor.device))
 
-            negative_indices = self.get_indices(similarity_matrix)
+            negative_indices, weights = self.get_indices(similarity_matrix)
 
-        return negative_indices
+        return negative_indices, weights
 
-    def sampling(self, anchor: torch.Tensor, positive: torch.Tensor) -> torch.Tensor:
+    def sampling(self, anchor: torch.Tensor, positive: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
 
         if self.sampling_type == 'hard':
-            negative_indices = self.hard_sampling(anchor=anchor, positive=positive)
+            negative_indices, weights = self.hard_sampling(anchor=anchor, positive=positive)
         elif self.sampling_type == 'semi_hard':
-            negative_indices = self.semi_hard_sampling(anchor=anchor, positive=positive)
+            negative_indices, weights = self.semi_hard_sampling(anchor=anchor, positive=positive)
         else:
-            negative_indices = self.random_sampling(batch_size=anchor.size(0))
+            negative_indices, weights = self.random_sampling(batch_size=anchor.size(0))
 
         negative_indices = negative_indices.to(anchor.device)
 
-        return negative_indices
+        weights = weights.to(anchor.device)
+
+        return negative_indices, weights
 
 
 class CosineTripletLoss(nn.Module):
@@ -134,7 +147,8 @@ class CosineTripletLoss(nn.Module):
 
         positive_sim_matrix = (anchor * positive).sum(dim=1)
 
-        negative_indices = self.miner.sampling(anchor=anchor, positive=positive).squeeze(dim=1)
+        negative_indices, _ = self.miner.sampling(anchor=anchor, positive=positive)
+        negative_indices = negative_indices.squeeze(dim=1)
 
         negative = positive[negative_indices]
 
@@ -151,6 +165,7 @@ class MultipleCosineTripletLoss(nn.Module):
                  margin: float = 0.05,
                  n_negatives: int = 5,
                  use_centroid: bool = True,
+                 weighted: bool = False,
                  sampling_type: str = 'semi_hard',
                  normalize: bool = False,
                  multinomial: bool = False,
@@ -160,6 +175,7 @@ class MultipleCosineTripletLoss(nn.Module):
 
         self.margin = margin
         self.use_centroid = use_centroid
+        self.weighted = weighted
 
         self.miner = CosineMiner(n_negatives=n_negatives,
                                  sampling_type=sampling_type,
@@ -172,7 +188,7 @@ class MultipleCosineTripletLoss(nn.Module):
 
         positive_sim_matrix = (anchor * positive).sum(dim=1)
 
-        negative_indices = self.miner.sampling(anchor=anchor, positive=positive)
+        negative_indices, weights = self.miner.sampling(anchor=anchor, positive=positive)
 
         negative = positive[negative_indices]
 
@@ -181,8 +197,11 @@ class MultipleCosineTripletLoss(nn.Module):
             negative_sim_matrix = (anchor * negative).sum(dim=1)
         else:
             anchor = anchor.unsqueeze(dim=1)
-            negative_sim_matrix = torch.bmm(anchor, negative.transpose(1, 2))
-            negative_sim_matrix = negative_sim_matrix.squeeze(dim=1).mean(dim=-1)
+            negative_sim_matrix = torch.bmm(anchor, negative.transpose(1, 2)).squeeze(dim=1)
+            if self.weighted:
+                negative_sim_matrix = (negative_sim_matrix * weights).sum(dim=-1)
+            else:
+                negative_sim_matrix = negative_sim_matrix.mean(dim=-1)
 
         loss = torch.relu(self.margin - positive_sim_matrix + negative_sim_matrix).mean()
 
@@ -285,7 +304,7 @@ class MultipleNegativesWithMiningLoss(MultipleNegativesLoss):
 
     def forward(self, anchor: torch.Tensor, positive: torch.Tensor) -> torch.Tensor:
 
-        negative_indices = self.miner.sampling(anchor=anchor, positive=positive)
+        negative_indices, weights = self.miner.sampling(anchor=anchor, positive=positive)
 
         negative = positive[negative_indices]
 
