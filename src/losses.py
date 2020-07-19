@@ -14,8 +14,7 @@ class CosineMiner(nn.Module, ABC):
                  normalize: bool = False,
                  multinomial: bool = False,
                  semi_hard_epsilon: float = 0.,
-                 margin: Optional[float] = None,
-                 mask_value: float = -10.):
+                 margin: Optional[float] = None):
         super().__init__()
 
         self.n_negatives = n_negatives
@@ -28,8 +27,9 @@ class CosineMiner(nn.Module, ABC):
         if self.sampling_type not in self.SAMPLING_TYPES:
             raise ValueError(f'Not available sampling_type. Available: {", ".join(self.SAMPLING_TYPES)}')
 
-        self.mask_value = torch.tensor([mask_value])
         self.diagonal_mask_value = torch.tensor([-10000.])
+        self.upper_bound_mask_value = torch.tensor([-10.])
+        self.lower_bound_mask_value = torch.tensor([-1.])
 
     def get_indices(self, similarity_matrix):
         if self.multinomial:
@@ -68,11 +68,11 @@ class CosineMiner(nn.Module, ABC):
                                                         self.diagonal_mask_value.to(anchor.device))
 
             similarity_matrix = similarity_matrix.where(difference > 0.,
-                                                        self.mask_value.to(anchor.device))
+                                                        self.upper_bound_mask_value.to(anchor.device))
 
             if self.margin is not None:
                 similarity_matrix = similarity_matrix.where(difference <= self.margin,
-                                                            self.mask_value.to(anchor.device))
+                                                            self.lower_bound_mask_value.to(anchor.device))
 
             negative_indices = self.get_indices(similarity_matrix)
 
@@ -114,7 +114,6 @@ class CosineTripletLoss(nn.Module):
 
     def __init__(self,
                  margin: float = 0.05,
-                 n_negatives: int = 5,
                  sampling_type: str = 'semi_hard',
                  normalize: bool = False,
                  multinomial: bool = False,
@@ -123,6 +122,44 @@ class CosineTripletLoss(nn.Module):
         super().__init__()
 
         self.margin = margin
+
+        self.miner = CosineMiner(n_negatives=1,
+                                 sampling_type=sampling_type,
+                                 normalize=normalize,
+                                 multinomial=multinomial,
+                                 margin=self.margin if use_margin_for_sampling else None,
+                                 semi_hard_epsilon=semi_hard_epsilon)
+
+    def forward(self, anchor: torch.Tensor, positive: torch.Tensor) -> torch.Tensor:
+
+        positive_sim_matrix = (anchor * positive).sum(dim=1)
+
+        negative_indices = self.miner.sampling(anchor=anchor, positive=positive).squeeze(dim=1)
+
+        negative = positive[negative_indices]
+
+        negative_sim_matrix = (anchor * negative).sum(dim=1)
+
+        loss = torch.relu(self.margin - positive_sim_matrix + negative_sim_matrix).mean()
+
+        return loss
+
+
+class MultipleCosineTripletLoss(nn.Module):
+
+    def __init__(self,
+                 margin: float = 0.05,
+                 n_negatives: int = 5,
+                 use_centroid: bool = True,
+                 sampling_type: str = 'semi_hard',
+                 normalize: bool = False,
+                 multinomial: bool = False,
+                 use_margin_for_sampling: bool = False,
+                 semi_hard_epsilon: float = 0.):
+        super().__init__()
+
+        self.margin = margin
+        self.use_centroid = use_centroid
 
         self.miner = CosineMiner(n_negatives=n_negatives,
                                  sampling_type=sampling_type,
@@ -139,12 +176,13 @@ class CosineTripletLoss(nn.Module):
 
         negative = positive[negative_indices]
 
-        if negative_indices.size(1) == 1:
-            negative = negative.squeeze(dim=1)
-        else:
+        if self.use_centroid:
             negative = negative.mean(dim=1)
-
-        negative_sim_matrix = (anchor * negative).sum(dim=1)
+            negative_sim_matrix = (anchor * negative).sum(dim=1)
+        else:
+            anchor = anchor.unsqueeze(dim=1)
+            negative_sim_matrix = torch.bmm(anchor, negative.transpose(1, 2))
+            negative_sim_matrix = negative_sim_matrix.squeeze(dim=1).mean(dim=-1)
 
         loss = torch.relu(self.margin - positive_sim_matrix + negative_sim_matrix).mean()
 
