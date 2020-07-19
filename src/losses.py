@@ -14,6 +14,7 @@ class CosineMiner(nn.Module, ABC):
                  normalize: bool = False,
                  multinomial: bool = False,
                  semi_hard_epsilon: float = 0.,
+                 margin: Optional[float] = None,
                  mask_value: float = -10000.):
         super().__init__()
 
@@ -21,6 +22,7 @@ class CosineMiner(nn.Module, ABC):
         self.sampling_type = sampling_type
         self.normalize = normalize
         self.multinomial = multinomial
+        self.margin = margin
         self.semi_hard_epsilon = semi_hard_epsilon
 
         if self.sampling_type not in self.SAMPLING_TYPES:
@@ -67,7 +69,11 @@ class CosineMiner(nn.Module, ABC):
             similarity_matrix = similarity_matrix.where(difference > 0.,
                                                         self.mask_value.to(anchor.device))
 
-            negative_indices = self.get_indices(similarity_matrix=similarity_matrix)
+            if self.margin is not None:
+                similarity_matrix = similarity_matrix.where(difference <= self.margin,
+                                                            self.mask_value.to(anchor.device))
+
+            negative_indices = self.get_indices(similarity_matrix)
 
         return negative_indices
 
@@ -85,7 +91,7 @@ class CosineMiner(nn.Module, ABC):
             similarity_matrix = similarity_matrix.where(~diagonal_mask.bool(),
                                                         self.mask_value.to(anchor.device))
 
-            negative_indices = self.get_indices(similarity_matrix=similarity_matrix)
+            negative_indices = self.get_indices(similarity_matrix)
 
         return negative_indices
 
@@ -107,9 +113,11 @@ class CosineTripletLoss(nn.Module):
 
     def __init__(self,
                  margin: float = 0.05,
-                 sampling_type: str = 'semi_hard',
                  n_negatives: int = 5,
+                 sampling_type: str = 'semi_hard',
+                 normalize: bool = False,
                  multinomial: bool = False,
+                 use_margin_for_sampling: bool = False,
                  semi_hard_epsilon: float = 0.):
         super().__init__()
 
@@ -117,8 +125,9 @@ class CosineTripletLoss(nn.Module):
 
         self.miner = CosineMiner(n_negatives=n_negatives,
                                  sampling_type=sampling_type,
-                                 normalize=False,
+                                 normalize=normalize,
                                  multinomial=multinomial,
+                                 margin=self.margin if use_margin_for_sampling else None,
                                  semi_hard_epsilon=semi_hard_epsilon)
 
     def forward(self, anchor: torch.Tensor, positive: torch.Tensor) -> torch.Tensor:
@@ -221,6 +230,7 @@ class MultipleNegativesWithMiningLoss(MultipleNegativesLoss):
                  n_negatives: int = 4,
                  miner_type: str = 'cosine',
                  sampling_type: str = 'semi_hard',
+                 normalize: bool = True,
                  multinomial: bool = False,
                  semi_hard_epsilon: float = 0.):
         super().__init__(smoothing=smoothing)
@@ -228,7 +238,7 @@ class MultipleNegativesWithMiningLoss(MultipleNegativesLoss):
         if miner_type == 'cosine':
             self.miner = CosineMiner(n_negatives=n_negatives,
                                      sampling_type=sampling_type,
-                                     normalize=False,
+                                     normalize=normalize,
                                      multinomial=multinomial,
                                      semi_hard_epsilon=semi_hard_epsilon)
         else:
