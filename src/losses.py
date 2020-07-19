@@ -15,7 +15,7 @@ class CosineMiner(nn.Module, ABC):
                  multinomial: bool = False,
                  semi_hard_epsilon: float = 0.,
                  margin: Optional[float] = None,
-                 mask_value: float = -10000.):
+                 mask_value: float = -10.):
         super().__init__()
 
         self.n_negatives = n_negatives
@@ -29,6 +29,7 @@ class CosineMiner(nn.Module, ABC):
             raise ValueError(f'Not available sampling_type. Available: {", ".join(self.SAMPLING_TYPES)}')
 
         self.mask_value = torch.tensor([mask_value])
+        self.diagonal_mask_value = torch.tensor([-10000.])
 
     def get_indices(self, similarity_matrix):
         if self.multinomial:
@@ -64,7 +65,7 @@ class CosineMiner(nn.Module, ABC):
             difference = difference - similarity_matrix + self.semi_hard_epsilon
 
             similarity_matrix = similarity_matrix.where(~diagonal_mask.bool(),
-                                                        self.mask_value.to(anchor.device))
+                                                        self.diagonal_mask_value.to(anchor.device))
 
             similarity_matrix = similarity_matrix.where(difference > 0.,
                                                         self.mask_value.to(anchor.device))
@@ -89,7 +90,7 @@ class CosineMiner(nn.Module, ABC):
             diagonal_mask = torch.eye(anchor.size(0)).bool().to(anchor.device)
 
             similarity_matrix = similarity_matrix.where(~diagonal_mask.bool(),
-                                                        self.mask_value.to(anchor.device))
+                                                        self.diagonal_mask_value.to(anchor.device))
 
             negative_indices = self.get_indices(similarity_matrix)
 
