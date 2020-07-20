@@ -33,15 +33,15 @@ class CosineMiner(nn.Module, ABC):
 
     def get_indices(self, similarity_matrix):
 
-        distribution_similarity_matrix = torch.softmax(similarity_matrix, dim=1)
-
         if self.multinomial:
+            distribution_similarity_matrix = torch.softmax(similarity_matrix, dim=-1)
             negative_indices = torch.multinomial(distribution_similarity_matrix, num_samples=self.n_negatives)
         else:
-            negative_indices = distribution_similarity_matrix.argsort(descending=True)
-            negative_indices = negative_indices[:, :self.n_negatives]
+            negative_indices = similarity_matrix.argsort(descending=True)[:, :self.n_negatives]
 
-        negative_weights = distribution_similarity_matrix.gather(dim=-1, index=negative_indices)
+        negative_weights = similarity_matrix.gather(dim=-1, index=negative_indices)
+
+        negative_weights = torch.softmax(negative_weights, dim=-1)
 
         return negative_indices, negative_weights
 
@@ -52,7 +52,7 @@ class CosineMiner(nn.Module, ABC):
         random_indices = torch.randint(batch_size - 1, (batch_size, self.n_negatives))
         negative_indices = torch.gather(possible_indices, 1, random_indices)
 
-        weights = torch.ones(batch_size) / batch_size
+        weights = torch.ones_like(negative_indices).float() / batch_size
 
         return negative_indices, weights
 
@@ -193,7 +193,11 @@ class MultipleCosineTripletLoss(nn.Module):
         negative = positive[negative_indices]
 
         if self.use_centroid:
-            negative = negative.mean(dim=1)
+            if self.weighted:
+                negative = negative * weights.unsqueeze(dim=-1)
+                negative = negative.sum(dim=1)
+            else:
+                negative = negative.mean(dim=1)
             negative_sim_matrix = (anchor * negative).sum(dim=1)
         else:
             anchor = anchor.unsqueeze(dim=1)
@@ -304,7 +308,8 @@ class MultipleNegativesWithMiningLoss(MultipleNegativesLoss):
 
     def forward(self, anchor: torch.Tensor, positive: torch.Tensor) -> torch.Tensor:
 
-        negative_indices, weights = self.miner.sampling(anchor=anchor, positive=positive)
+        # TODO add weighted loss
+        negative_indices, _ = self.miner.sampling(anchor=anchor, positive=positive)
 
         negative = positive[negative_indices]
 
