@@ -113,7 +113,7 @@ def train():
                          accumulate_grad_batches=args.n_batch_accumulate,
                          use_amp=use_amp,
                          precision=precision,
-                         gradient_clip=args.max_norm,
+                         gradient_clip_val=args.max_norm,
                          distributed_backend=args.distributed_backend,
                          gpus=[args.gpu] if args.gpu is not None else None,
                          val_check_interval=0.25,
